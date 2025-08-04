@@ -16,7 +16,7 @@ CORS(app)
 # Change this to a strong secret key for production
 app.config['SECRET_KEY'] = 'shoeb@123_secure_key_production'
 # For production, use your hosted MongoDB URI
-MONGO_URI = ("mongodb+srv://Shoeb:shoeb5550@institute.yy85jzx.mongodb.net/?retryWrites=true&w=majority&appName=Institute")
+MONGO_URI = ("mongodb+srv://Shoeb:<db_password>@cluster0.hkjhmtc.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0")
 # For local development, use:
 # MONGO_URI = "mongodb://localhost:27017"
 DATABASE_NAME = "Institute"
