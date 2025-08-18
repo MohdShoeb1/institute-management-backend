@@ -9,17 +9,25 @@ import secrets
 import os
 from functools import wraps
 
+
+# Use environment variables for sensitive info
 app = Flask(__name__)
-CORS(app)
+from dotenv import load_dotenv
+load_dotenv()
+
+# Restrict CORS for production
+if os.environ.get('FLASK_ENV') == 'production':
+    CORS(app, origins=[os.environ.get('FRONTEND_ORIGIN', 'http://localhost:8000')])
+else:
+    CORS(app)
 
 # Configuration
 # Change this to a strong secret key for production
-app.config['SECRET_KEY'] = 'shoeb@123_secure_key_production'
-# For production, use your hosted MongoDB URI
-MONGO_URI = ("mongodb+srv://Shoeb:shoeb5550@cluster0.hkjhmtc.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0")
-# For local development, use:
-# MONGO_URI = "mongodb://localhost:27017"
-DATABASE_NAME = "Institute"
+
+# Use environment variables for secret key and Mongo URI
+app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'shoeb@123_secure_key_production')
+MONGO_URI = os.environ.get('MONGO_URI', "mongodb+srv://Shoeb:shoeb5550@cluster0.hkjhmtc.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0")
+DATABASE_NAME = os.environ.get('DATABASE_NAME', "Institute")
 
 # Global variables for database
 client = None
@@ -266,15 +274,22 @@ def verify_token(current_user):
 @token_required
 def get_students(current_user):
     try:
+        # Pagination params
+        page = int(request.args.get('page', 1))
+        page_size = int(request.args.get('page_size', 25))
         if db is not None and students_collection is not None:
-            students = list(students_collection.find())
+            total = students_collection.count_documents({})
+            students = list(students_collection.find().skip((page-1)*page_size).limit(page_size))
             for student in students:
                 student['_id'] = str(student['_id'])
-            return jsonify({'success': True, 'data': students})
+            return jsonify({'success': True, 'data': students, 'total': total, 'page': page, 'page_size': page_size})
         else:
-            # Return offline data
-            return jsonify({'success': True, 'data': offline_data['students']})
-            
+            # Return offline data with pagination
+            total = len(offline_data['students'])
+            start = (page-1)*page_size
+            end = start+page_size
+            students = offline_data['students'][start:end]
+            return jsonify({'success': True, 'data': students, 'total': total, 'page': page, 'page_size': page_size})
     except Exception as e:
         print(f"Error getting students: {e}")
         return jsonify({'success': True, 'data': offline_data['students']})
@@ -353,15 +368,20 @@ def delete_student(current_user, student_id):
 @token_required
 def get_courses(current_user):
     try:
+        page = int(request.args.get('page', 1))
+        page_size = int(request.args.get('page_size', 25))
         if db is not None and courses_collection is not None:
-            courses = list(courses_collection.find())
+            total = courses_collection.count_documents({})
+            courses = list(courses_collection.find().skip((page-1)*page_size).limit(page_size))
             for course in courses:
                 course['_id'] = str(course['_id'])
-            return jsonify({'success': True, 'data': courses})
+            return jsonify({'success': True, 'data': courses, 'total': total, 'page': page, 'page_size': page_size})
         else:
-            # Return offline data
-            return jsonify({'success': True, 'data': offline_data['courses']})
-            
+            total = len(offline_data['courses'])
+            start = (page-1)*page_size
+            end = start+page_size
+            courses = offline_data['courses'][start:end]
+            return jsonify({'success': True, 'data': courses, 'total': total, 'page': page, 'page_size': page_size})
     except Exception as e:
         print(f"Error getting courses: {e}")
         return jsonify({'success': True, 'data': offline_data['courses']})
@@ -398,18 +418,22 @@ def add_course(current_user):
 @token_required
 def get_payments(current_user):
     try:
+        page = int(request.args.get('page', 1))
+        page_size = int(request.args.get('page_size', 25))
         if db is not None and payments_collection is not None:
-            payments = list(payments_collection.find().sort('payment_date', -1))
+            total = payments_collection.count_documents({})
+            payments = list(payments_collection.find().sort('payment_date', -1).skip((page-1)*page_size).limit(page_size))
             for payment in payments:
                 payment['_id'] = str(payment['_id'])
-                # Convert datetime to string for JSON serialization
                 if 'payment_date' in payment and hasattr(payment['payment_date'], 'isoformat'):
                     payment['payment_date'] = payment['payment_date'].isoformat()
-            return jsonify({'success': True, 'data': payments})
+            return jsonify({'success': True, 'data': payments, 'total': total, 'page': page, 'page_size': page_size})
         else:
-            # Return offline data
-            return jsonify({'success': True, 'data': offline_data['payments']})
-            
+            total = len(offline_data['payments'])
+            start = (page-1)*page_size
+            end = start+page_size
+            payments = offline_data['payments'][start:end]
+            return jsonify({'success': True, 'data': payments, 'total': total, 'page': page, 'page_size': page_size})
     except Exception as e:
         print(f"Error getting payments: {e}")
         return jsonify({'success': True, 'data': offline_data['payments']})
