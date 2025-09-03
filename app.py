@@ -1,5 +1,5 @@
 from flask import Flask, request, jsonify
-from flask_cors import CORS
+from flask_cors import CORS, cross_origin
 from pymongo import MongoClient
 from bson import ObjectId
 from datetime import datetime, timedelta
@@ -17,9 +17,24 @@ load_dotenv()
 
 # Restrict CORS for production
 if os.environ.get('FLASK_ENV') == 'production':
-    CORS(app, origins=[os.environ.get('FRONTEND_ORIGIN', 'http://localhost:8000')])
+    CORS(
+        app,
+        origins=[os.environ.get('FRONTEND_ORIGIN', 'http://localhost:8000')],
+        supports_credentials=False,
+        allow_headers=["Content-Type", "Authorization"],
+        methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+        expose_headers=["Content-Type"],
+        max_age=600,
+    )
 else:
-    CORS(app)
+    CORS(
+        app,
+        supports_credentials=False,
+        allow_headers=["Content-Type", "Authorization"],
+        methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+        expose_headers=["Content-Type"],
+        max_age=600,
+    )
 
 # Configuration
 # Change this to a strong secret key for production
@@ -118,10 +133,12 @@ def token_required(f):
     """Decorator to require valid token"""
     @wraps(f)
     def decorated(*args, **kwargs):
+        if request.method == 'OPTIONS':
+            return ('', 204)
+
         token = request.headers.get('Authorization')
         if not token:
             return jsonify({'success': False, 'message': 'Token is missing'}), 401
-        
         try:
             if token.startswith('Bearer '):
                 token = token[7:]
@@ -131,7 +148,7 @@ def token_required(f):
             return jsonify({'success': False, 'message': 'Token has expired'}), 401
         except jwt.InvalidTokenError:
             return jsonify({'success': False, 'message': 'Token is invalid'}), 401
-        
+
         return f(current_user, *args, **kwargs)
     return decorated
 
@@ -438,6 +455,60 @@ def get_payments(current_user):
         print(f"Error getting payments: {e}")
         return jsonify({'success': True, 'data': offline_data['payments']})
 
+@app.route('/api/stats', methods=['GET', 'OPTIONS'])
+@cross_origin()
+@token_required
+def get_stats(current_user):
+    try:
+        # Total students
+        if db is not None and students_collection is not None:
+            total_students = students_collection.count_documents({})
+            active_students = students_collection.count_documents({"status": "Active"})
+        else:
+            total_students = len(offline_data['students'])
+            active_students = len([s for s in offline_data['students'] if s.get("status") == "Active"])
+
+        # Total courses
+        if db is not None and courses_collection is not None:
+            total_courses = courses_collection.count_documents({})
+        else:
+            total_courses = len(offline_data['courses'])
+
+        # Revenue & Pending Amount
+        total_revenue = 0
+        pending_amount = 0
+        if db is not None and students_collection is not None:
+            pipeline = [
+                {"$group": {
+                    "_id": None,
+                    "total_paid": {"$sum": "$paid_amount"},
+                    "total_fee": {"$sum": "$total_fee"}
+                }}
+            ]
+            result = list(students_collection.aggregate(pipeline))
+            if result:
+                total_revenue = result[0].get("total_paid", 0)
+                pending_amount = result[0].get("total_fee", 0) - total_revenue
+        else:
+            for s in offline_data['students']:
+                total_revenue += s.get("paid_amount", 0)
+                pending_amount += s.get("total_fee", 0) - s.get("paid_amount", 0)
+
+        return jsonify({
+            "success": True,
+            "data": {
+                "total_students": total_students,
+                "active_students": active_students,
+                "total_courses": total_courses,
+                "total_revenue": total_revenue,
+                "pending_amount": pending_amount
+            }
+        })
+    except Exception as e:
+        print(f"Error in get_stats: {e}")
+        return jsonify({"success": False, "message": "Error fetching stats"}), 500
+
+
 @app.route('/api/payments', methods=['POST'])
 @token_required
 def add_payment(current_user):
@@ -716,4 +787,3 @@ if __name__ == '__main__':
     
     # For development:
     app.run(debug=True, host='0.0.0.0', port=5000)
-
